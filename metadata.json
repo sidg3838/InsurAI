@@ -1,0 +1,6 @@
+{
+  "name": "InsurAI Claims Copilot",
+  "description": "AI-powered automated insurance claim assessment, fraud risk evaluation, and instant decision engine.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
