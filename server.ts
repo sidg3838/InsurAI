@@ -13,10 +13,11 @@ async function startServer() {
 
   // API Health Check
   app.get('/api/health', (req, res) => {
+    const apiKey = process.env.GEMINI_API_KEY || "AQ.Ab8RN6J-rRpffnx5uhjWVcpFQzBJUXuqszkXue7YgSi0D0u-ng";
     res.json({
       status: 'ok',
       service: 'InsurAI Claims Copilot Engine',
-      hasApiKey: !!process.env.GEMINI_API_KEY,
+      hasApiKey: !!apiKey,
       timestamp: new Date().toISOString()
     });
   });
@@ -30,7 +31,7 @@ async function startServer() {
       }
 
       const activeRules = rules || DEFAULT_POLICY_RULES;
-      const apiKey = process.env.GEMINI_API_KEY;
+      const apiKey = process.env.GEMINI_API_KEY || "AQ.Ab8RN6J-rRpffnx5uhjWVcpFQzBJUXuqszkXue7YgSi0D0u-ng";
 
       const { assessment } = await evaluateClaimWithGemini(claim, activeRules, apiKey);
 
