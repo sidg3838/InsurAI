@@ -122,7 +122,7 @@ export async function evaluateClaimWithGemini(
   claim: ClaimData,
   rules: PolicyRulesConfig,
   apiKey?: string
-): Promise<{ assessment: ClaimAssessmentResult }> {
+): Promise<{ assessment: ClaimAssessmentResult; aiFetched: boolean; aiError?: string }> {
   const { ruleBreakdown, deterministicFlags, deterministicFailed } = evaluateDeterministicRules(claim, rules);
 
   let aiAssessmentPartial: {
@@ -134,6 +134,9 @@ export async function evaluateClaimWithGemini(
     customerNextSteps?: string[];
     adjusterNextSteps?: string[];
   } = {};
+
+  let aiFetched = false;
+  let aiError: string | undefined;
 
   if (apiKey) {
     try {
@@ -226,10 +229,16 @@ Return JSON with structure matching:
 
       if (response.text) {
         aiAssessmentPartial = JSON.parse(response.text.trim());
+        aiFetched = true;
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Gemini API call error in claim evaluator:', err);
+      aiFetched = false;
+      aiError = err?.message || 'Failed to communicate with Gemini API / model';
     }
+  } else {
+    aiFetched = false;
+    aiError = 'GEMINI_API_KEY environment variable is not configured';
   }
 
   // Combine Deterministic Rules & AI Response
@@ -317,7 +326,9 @@ Return JSON with structure matching:
         ? aiAssessmentPartial.adjusterNextSteps 
         : defaultAdjSteps,
       evaluatedAt: new Date().toISOString(),
-      aiModelUsed: apiKey ? 'Gemini 3.6 Flash (InsurAI Copilot)' : 'InsurAI Policy Rule Engine'
-    }
+      aiModelUsed: (apiKey && aiFetched) ? 'Gemini 3.6 Flash (InsurAI Copilot)' : 'InsurAI Policy Rule Engine'
+    },
+    aiFetched,
+    aiError
   };
 }

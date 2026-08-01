@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ClaimData, ClaimAssessmentResult, PolicyRulesConfig, ClaimStatus } from './types';
 import { INITIAL_MOCK_CLAIMS, DEFAULT_POLICY_RULES } from './data/mockClaims';
 import { Header } from './components/Header';
+import { ApiKeyModal } from './components/ApiKeyModal';
 import { ClaimsList } from './components/ClaimsList';
 import { NewClaimForm } from './components/NewClaimForm';
 import { ClaimDetailModal } from './components/ClaimDetailModal';
@@ -15,21 +16,87 @@ export default function App() {
   const [rules, setRules] = useState<PolicyRulesConfig>(DEFAULT_POLICY_RULES);
   const [selectedClaimId, setSelectedClaimId] = useState<string | null>(null);
   const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
+  const [evalError, setEvalError] = useState<string | null>(null);
+  const [evalSuccessMessage, setEvalSuccessMessage] = useState<string | null>(null);
+  const [isTestingKey, setIsTestingKey] = useState<boolean>(false);
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState<boolean>(false);
+
+  // User API key state with localStorage persistence
+  const [userApiKey, setUserApiKey] = useState<string>(() => {
+    return localStorage.getItem('google_aistudio_api_key') || '';
+  });
+  const [keyTestStatus, setKeyTestStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [keyStatusMessage, setKeyStatusMessage] = useState<string | null>(null);
+
+  const handleUserApiKeyChange = (newKey: string) => {
+    setUserApiKey(newKey);
+    localStorage.setItem('google_aistudio_api_key', newKey);
+    setKeyTestStatus('idle');
+    setKeyStatusMessage(null);
+  };
+
+  const handleTestApiKey = async (keyToTest?: string): Promise<boolean> => {
+    const key = keyToTest !== undefined ? keyToTest : userApiKey;
+    setIsTestingKey(true);
+    setKeyTestStatus('idle');
+    setKeyStatusMessage(null);
+    setEvalError(null);
+    setEvalSuccessMessage(null);
+
+    try {
+      const res = await fetch('/api/test-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: key })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setKeyTestStatus('success');
+        const successMsg = data.message || 'Gemini 3.6 Flash API Key & Model verified successfully!';
+        setKeyStatusMessage(successMsg);
+        setEvalSuccessMessage(successMsg);
+        return true;
+      } else {
+        setKeyTestStatus('error');
+        const errMsg = data.message || data.error || 'Failed to fetch AI evaluation key or model from Gemini API.';
+        setKeyStatusMessage(errMsg);
+        setEvalError(`Failed to fetch AI evaluation: ${errMsg}`);
+        return false;
+      }
+    } catch (err: any) {
+      setKeyTestStatus('error');
+      const errMsg = `Failed to fetch AI evaluation: ${err?.message || 'Network error connecting to API'}`;
+      setKeyStatusMessage(errMsg);
+      setEvalError(errMsg);
+      return false;
+    } finally {
+      setIsTestingKey(false);
+    }
+  };
 
   // Evaluate single claim via Express backend
-  const evaluateClaim = async (claim: ClaimData, currentRules = rules): Promise<ClaimAssessmentResult | null> => {
+  const evaluateClaim = async (claim: ClaimData, currentRules = rules, overrideApiKey = userApiKey): Promise<ClaimAssessmentResult | null> => {
     try {
       const response = await fetch('/api/evaluate-claim', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ claim, rules: currentRules })
+        body: JSON.stringify({ claim, rules: currentRules, apiKey: overrideApiKey })
       });
 
-      if (!response.ok) {
-        throw new Error(`Server returned ${response.status}`);
+      const data = await response.json();
+
+      if (!response.ok || !data.success || data.aiFetched === false) {
+        const errMsg = data.message || data.error || `Server returned ${response.status}`;
+        setEvalError(`Failed to fetch AI evaluation: ${errMsg}`);
+        if (data.assessment) {
+          setAssessments(prev => ({
+            ...prev,
+            [claim.id]: data.assessment
+          }));
+        }
+        return null;
       }
 
-      const data = await response.json();
       if (data.success && data.assessment) {
         setAssessments(prev => ({
           ...prev,
@@ -37,8 +104,9 @@ export default function App() {
         }));
         return data.assessment;
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to evaluate claim via API:', err);
+      setEvalError(`Failed to fetch AI evaluation: ${err?.message || 'Network request failed'}`);
     }
     return null;
   };
@@ -46,10 +114,28 @@ export default function App() {
   // Evaluate all unassessed claims on initial load or on batch click
   const evaluateAllClaims = async (claimList = claims, currentRules = rules) => {
     setIsEvaluating(true);
+    setEvalError(null);
+    setEvalSuccessMessage(null);
+    let failedCount = 0;
+    let successCount = 0;
+
     for (const claim of claimList) {
-      await evaluateClaim(claim, currentRules);
+      const result = await evaluateClaim(claim, currentRules);
+      if (!result) {
+        failedCount++;
+      } else {
+        successCount++;
+      }
     }
     setIsEvaluating(false);
+
+    if (failedCount > 0 && successCount === 0) {
+      setEvalError('Failed to fetch AI evaluation for queue. Unable to fetch key or model response from Gemini API.');
+    } else if (failedCount > 0) {
+      setEvalError(`Failed to fetch AI evaluation for ${failedCount} claim(s). Successfully processed ${successCount}.`);
+    } else if (successCount > 0) {
+      setEvalSuccessMessage(`AI evaluation completed successfully for all ${successCount} claim(s) via Gemini 3.6 Flash!`);
+    }
   };
 
   useEffect(() => {
@@ -141,6 +227,17 @@ export default function App() {
         }}
       />
 
+      <ApiKeyModal
+        isOpen={isApiKeyModalOpen}
+        onClose={() => setIsApiKeyModalOpen(false)}
+        apiKey={userApiKey}
+        onChangeApiKey={handleUserApiKeyChange}
+        onTestApiKey={handleTestApiKey}
+        isTestingKey={isTestingKey}
+        testStatus={keyTestStatus}
+        statusMessage={keyStatusMessage}
+      />
+
       <main className="grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {activeTab === 'dashboard' && (
           <ClaimsList
@@ -150,6 +247,11 @@ export default function App() {
             onEvaluateClaim={(claim) => evaluateClaim(claim)}
             onBatchEvaluateAll={() => evaluateAllClaims(claims, rules)}
             isEvaluatingAny={isEvaluating}
+            evalError={evalError}
+            evalSuccessMessage={evalSuccessMessage}
+            onClearEvalMessages={() => { setEvalError(null); setEvalSuccessMessage(null); }}
+            onOpenApiKeyModal={() => setIsApiKeyModalOpen(true)}
+            isTestingKey={isTestingKey}
           />
         )}
 

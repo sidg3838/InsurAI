@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ClaimData, ClaimAssessmentResult, PolicyType, FraudRiskLevel } from '../types';
-import { Search, Filter, ShieldCheck, AlertTriangle, CheckCircle2, ArrowUpRight, Zap, RefreshCw, Calendar, DollarSign, FileText } from 'lucide-react';
+import { Search, Filter, ShieldCheck, AlertTriangle, CheckCircle2, ArrowUpRight, Zap, RefreshCw, Calendar, DollarSign, FileText, X, KeyRound, Activity } from 'lucide-react';
 
 interface ClaimsListProps {
   claims: ClaimData[];
@@ -9,6 +9,11 @@ interface ClaimsListProps {
   onEvaluateClaim: (claim: ClaimData) => void;
   onBatchEvaluateAll: () => void;
   isEvaluatingAny: boolean;
+  evalError?: string | null;
+  evalSuccessMessage?: string | null;
+  onClearEvalMessages?: () => void;
+  onOpenApiKeyModal?: () => void;
+  isTestingKey?: boolean;
 }
 
 export const ClaimsList: React.FC<ClaimsListProps> = ({
@@ -17,7 +22,12 @@ export const ClaimsList: React.FC<ClaimsListProps> = ({
   onSelectClaim,
   onEvaluateClaim,
   onBatchEvaluateAll,
-  isEvaluatingAny
+  isEvaluatingAny,
+  evalError,
+  evalSuccessMessage,
+  onClearEvalMessages,
+  onOpenApiKeyModal,
+  isTestingKey
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [policyTypeFilter, setPolicyTypeFilter] = useState<string>('ALL');
@@ -50,6 +60,63 @@ export const ClaimsList: React.FC<ClaimsListProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Error Banner when AI Evaluation fails */}
+      {evalError && (
+        <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 text-rose-900 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-start space-x-3">
+            <div className="p-1.5 bg-rose-100 border border-rose-300 rounded-lg shrink-0 mt-0.5">
+              <AlertTriangle className="w-4 h-4 text-rose-600" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <span className="font-bold text-rose-900 text-sm">Failed to Fetch AI Evaluation</span>
+                <span className="px-2 py-0.5 rounded bg-rose-200/80 text-rose-900 font-mono text-[10px] font-bold">API / MODEL ERROR</span>
+              </div>
+              <p className="mt-1 text-rose-700 font-medium leading-relaxed">{evalError}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+            {onOpenApiKeyModal && (
+              <button
+                onClick={onOpenApiKeyModal}
+                className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs transition flex items-center space-x-1.5 shadow-xs"
+              >
+                <KeyRound className="w-3.5 h-3.5" />
+                <span>Enter Your API Key</span>
+              </button>
+            )}
+            {onClearEvalMessages && (
+              <button
+                onClick={onClearEvalMessages}
+                className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-100 transition"
+                title="Dismiss message"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Success Banner when AI Evaluation completes */}
+      {evalSuccessMessage && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 text-emerald-900 text-xs flex items-center justify-between shadow-xs">
+          <div className="flex items-center space-x-2.5">
+            <CheckCircle2 className="w-4.5 h-4.5 text-emerald-600 shrink-0" />
+            <span className="font-semibold text-emerald-900">{evalSuccessMessage}</span>
+          </div>
+          {onClearEvalMessages && (
+            <button
+              onClick={onClearEvalMessages}
+              className="p-1 rounded text-emerald-600 hover:bg-emerald-100 transition"
+              title="Dismiss message"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Search & Filter Bar */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -65,6 +132,17 @@ export const ClaimsList: React.FC<ClaimsListProps> = ({
           </div>
 
           <div className="flex items-center space-x-2">
+            {onOpenApiKeyModal && (
+              <button
+                onClick={onOpenApiKeyModal}
+                className="px-3.5 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 font-semibold text-xs transition flex items-center space-x-1.5 shadow-2xs"
+                title="Configure Google AI Studio API key for Gemini 3.6 Flash"
+              >
+                <KeyRound className="w-3.5 h-3.5 text-blue-600" />
+                <span>Enter Your API Key</span>
+              </button>
+            )}
+
             <button
               onClick={onBatchEvaluateAll}
               disabled={isEvaluatingAny}
