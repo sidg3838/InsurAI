@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { GoogleGenAI } from '@google/genai';
 import { ClaimData, ClaimAssessmentResult, PolicyRulesConfig, ClaimStatus } from './types';
 import { INITIAL_MOCK_CLAIMS, DEFAULT_POLICY_RULES } from './data/mockClaims';
 import { Header } from './components/Header';
@@ -8,6 +9,7 @@ import { NewClaimForm } from './components/NewClaimForm';
 import { ClaimDetailModal } from './components/ClaimDetailModal';
 import { RulesConfigurator } from './components/RulesConfigurator';
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
+import { evaluateClaimWithGemini } from './server/geminiEvaluator';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'new-claim' | 'rules' | 'analytics'>('dashboard');
@@ -43,39 +45,83 @@ export default function App() {
     setEvalError(null);
     setEvalSuccessMessage(null);
 
+    if (!key || !key.trim()) {
+      setKeyTestStatus('error');
+      const errMsg = 'Please enter a Google AI Studio API key in the input field.';
+      setKeyStatusMessage(errMsg);
+      setEvalError(`Failed to fetch AI evaluation: ${errMsg}`);
+      setIsTestingKey(false);
+      return false;
+    }
+
     try {
       const res = await fetch('/api/test-key', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ apiKey: key })
       });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setKeyTestStatus('success');
-        const successMsg = data.message || 'Gemini 3.6 Flash API Key & Model verified successfully!';
-        setKeyStatusMessage(successMsg);
-        setEvalSuccessMessage(successMsg);
-        return true;
+
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.success) {
+          setKeyTestStatus('success');
+          const successMsg = data.message || 'Gemini 3.6 Flash model fetched and verified successfully!';
+          setKeyStatusMessage(successMsg);
+          setEvalSuccessMessage(successMsg);
+          return true;
+        } else {
+          setKeyTestStatus('error');
+          const errMsg = data.message || data.error || 'Failed to fetch AI evaluation key or model from Gemini API.';
+          setKeyStatusMessage(errMsg);
+          setEvalError(`Failed to fetch AI evaluation: ${errMsg}`);
+          return false;
+        }
       } else {
+        // If server returned non-JSON HTML (e.g. Vercel static routing 404 HTML fallback), fallback to client-side test
+        throw new Error('SERVER_NON_JSON');
+      }
+    } catch (err: any) {
+      // Client-side fallback for Vercel static deployment
+      try {
+        const ai = new GoogleGenAI({
+          apiKey: key,
+          httpOptions: {
+            headers: { 'User-Agent': 'aistudio-build' }
+          }
+        });
+        const response = await ai.models.generateContent({
+          model: 'gemini-3.6-flash',
+          contents: 'Ping test',
+        });
+
+        if (response.text) {
+          setKeyTestStatus('success');
+          const successMsg = 'Gemini 3.6 Flash model fetched and verified successfully!';
+          setKeyStatusMessage(successMsg);
+          setEvalSuccessMessage(successMsg);
+          return true;
+        } else {
+          throw new Error('Empty response from Gemini model');
+        }
+      } catch (clientErr: any) {
         setKeyTestStatus('error');
-        const errMsg = data.message || data.error || 'Failed to fetch AI evaluation key or model from Gemini API.';
+        const errMsg = clientErr?.message || 'Failed to fetch key or model response from Gemini API';
         setKeyStatusMessage(errMsg);
         setEvalError(`Failed to fetch AI evaluation: ${errMsg}`);
         return false;
       }
-    } catch (err: any) {
-      setKeyTestStatus('error');
-      const errMsg = `Failed to fetch AI evaluation: ${err?.message || 'Network error connecting to API'}`;
-      setKeyStatusMessage(errMsg);
-      setEvalError(errMsg);
-      return false;
     } finally {
       setIsTestingKey(false);
     }
   };
 
-  // Evaluate single claim via Express backend
+  // Evaluate single claim via Express backend or client-side fallback
   const evaluateClaim = async (claim: ClaimData, currentRules = rules, overrideApiKey = userApiKey): Promise<ClaimAssessmentResult | null> => {
+    let assessmentResult: ClaimAssessmentResult | null = null;
+    let aiFetched = false;
+    let aiErrorMsg = '';
+
     try {
       const response = await fetch('/api/evaluate-claim', {
         method: 'POST',
@@ -83,32 +129,46 @@ export default function App() {
         body: JSON.stringify({ claim, rules: currentRules, apiKey: overrideApiKey })
       });
 
-      const data = await response.json();
-
-      if (!response.ok || !data.success || data.aiFetched === false) {
-        const errMsg = data.message || data.error || `Server returned ${response.status}`;
-        setEvalError(`Failed to fetch AI evaluation: ${errMsg}`);
-        if (data.assessment) {
-          setAssessments(prev => ({
-            ...prev,
-            [claim.id]: data.assessment
-          }));
+      const contentType = response.headers.get('content-type') || '';
+      if (response.ok && contentType.includes('application/json')) {
+        const data = await response.json();
+        if (data.success && data.assessment && data.aiFetched !== false) {
+          assessmentResult = data.assessment;
+          aiFetched = true;
+        } else if (data.assessment) {
+          assessmentResult = data.assessment;
+          aiErrorMsg = data.message || data.error || 'AI evaluation failed';
         }
-        return null;
+      } else {
+        // Non-JSON response (e.g. Vercel static hosting fallback) -> proceed to client fallback
+        throw new Error('SERVER_NON_JSON');
       }
-
-      if (data.success && data.assessment) {
-        setAssessments(prev => ({
-          ...prev,
-          [claim.id]: data.assessment
-        }));
-        return data.assessment;
+    } catch (err) {
+      // Fallback to client-side evaluation using Gemini SDK directly in the browser
+      try {
+        const res = await evaluateClaimWithGemini(claim, currentRules, overrideApiKey);
+        assessmentResult = res.assessment;
+        aiFetched = res.aiFetched;
+        if (!res.aiFetched) {
+          aiErrorMsg = res.aiError || 'Failed to fetch AI evaluation from Gemini API';
+        }
+      } catch (fallbackErr: any) {
+        aiErrorMsg = fallbackErr?.message || 'Client fallback evaluation error';
       }
-    } catch (err: any) {
-      console.error('Failed to evaluate claim via API:', err);
-      setEvalError(`Failed to fetch AI evaluation: ${err?.message || 'Network request failed'}`);
     }
-    return null;
+
+    if (assessmentResult) {
+      setAssessments(prev => ({
+        ...prev,
+        [claim.id]: assessmentResult!
+      }));
+    }
+
+    if (!aiFetched && aiErrorMsg) {
+      setEvalError(`Failed to fetch AI evaluation: ${aiErrorMsg}`);
+    }
+
+    return aiFetched ? assessmentResult : null;
   };
 
   // Evaluate all unassessed claims on initial load or on batch click
@@ -119,12 +179,17 @@ export default function App() {
     let failedCount = 0;
     let successCount = 0;
 
-    for (const claim of claimList) {
+    for (let i = 0; i < claimList.length; i++) {
+      const claim = claimList[i];
       const result = await evaluateClaim(claim, currentRules);
       if (!result) {
         failedCount++;
       } else {
         successCount++;
+      }
+      // Add brief delay between consecutive batch requests to respect free-tier RPM rate limits
+      if (i < claimList.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 800));
       }
     }
     setIsEvaluating(false);

@@ -193,39 +193,58 @@ Return JSON with structure matching:
 }
 `;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.6-flash',
-        contents: prompt,
-        config: {
-          systemInstruction: `You are InsurAI Claims Copilot, an expert AI insurance fraud investigator and automated claims triage system. Always return strictly valid JSON.`,
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              summary: { type: Type.STRING },
-              riskLevel: { type: Type.STRING, enum: ['Low', 'Medium', 'High'] },
-              riskScore: { type: Type.INTEGER },
-              aiAnomalies: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    code: { type: Type.STRING },
-                    label: { type: Type.STRING },
-                    severity: { type: Type.STRING, enum: ['low', 'medium', 'high'] },
-                    description: { type: Type.STRING }
+      let response;
+      let attempts = 0;
+      const maxAttempts = 3;
+
+      while (attempts < maxAttempts) {
+        try {
+          attempts++;
+          response = await ai.models.generateContent({
+            model: 'gemini-3.6-flash',
+            contents: prompt,
+            config: {
+              systemInstruction: `You are InsurAI Claims Copilot, an expert AI insurance fraud investigator and automated claims triage system. Always return strictly valid JSON.`,
+              responseMimeType: 'application/json',
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  summary: { type: Type.STRING },
+                  riskLevel: { type: Type.STRING, enum: ['Low', 'Medium', 'High'] },
+                  riskScore: { type: Type.INTEGER },
+                  aiAnomalies: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        code: { type: Type.STRING },
+                        label: { type: Type.STRING },
+                        severity: { type: Type.STRING, enum: ['low', 'medium', 'high'] },
+                        description: { type: Type.STRING }
+                      },
+                      required: ['code', 'label', 'severity', 'description']
+                    }
                   },
-                  required: ['code', 'label', 'severity', 'description']
-                }
-              },
-              aiDecisionReason: { type: Type.STRING },
-              customerNextSteps: { type: Type.ARRAY, items: { type: Type.STRING } },
-              adjusterNextSteps: { type: Type.ARRAY, items: { type: Type.STRING } }
-            },
-            required: ['summary', 'riskLevel', 'riskScore', 'aiAnomalies', 'aiDecisionReason', 'customerNextSteps', 'adjusterNextSteps']
+                  aiDecisionReason: { type: Type.STRING },
+                  customerNextSteps: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  adjusterNextSteps: { type: Type.ARRAY, items: { type: Type.STRING } }
+                },
+                required: ['summary', 'riskLevel', 'riskScore', 'aiAnomalies', 'aiDecisionReason', 'customerNextSteps', 'adjusterNextSteps']
+              }
+            }
+          });
+          break; // Success!
+        } catch (attemptErr: any) {
+          const errStr = String(attemptErr?.message || attemptErr);
+          const isRateLimitOrUnavailable = errStr.includes('429') || errStr.includes('503') || errStr.includes('RESOURCE_EXHAUSTED') || errStr.includes('UNAVAILABLE');
+          if (isRateLimitOrUnavailable && attempts < maxAttempts) {
+            // Wait before retry (1.5s then 3s)
+            await new Promise(r => setTimeout(r, attempts * 1500));
+          } else {
+            throw attemptErr;
           }
         }
-      });
+      }
 
       if (response.text) {
         aiAssessmentPartial = JSON.parse(response.text.trim());
