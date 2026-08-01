@@ -70,8 +70,57 @@ export const ClaimDetailModal: React.FC<ClaimDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 md:p-6">
-      <div className="bg-white w-full max-w-4xl rounded-2xl shadow-xl border border-slate-200 overflow-hidden my-auto max-h-[92vh] flex flex-col font-sans">
+    <div className="claim-modal-backdrop fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 md:p-6">
+      <style>{`
+        @media print {
+          @page {
+            margin: 15mm;
+          }
+          body {
+            background: #ffffff !important;
+            color: #000000 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          /* Hide main app UI outside modal backdrop when printing */
+          body > div > *:not(.claim-modal-backdrop) {
+            display: none !important;
+          }
+          .claim-modal-backdrop {
+            position: static !important;
+            inset: auto !important;
+            background: #ffffff !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            display: block !important;
+            overflow: visible !important;
+            z-index: auto !important;
+            backdrop-filter: none !important;
+          }
+          .claim-modal-card {
+            max-height: none !important;
+            height: auto !important;
+            overflow: visible !important;
+            border: none !important;
+            box-shadow: none !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            margin: 0 !important;
+            border-radius: 0 !important;
+            display: block !important;
+          }
+          .claim-modal-scroll-body {
+            overflow: visible !important;
+            max-height: none !important;
+            height: auto !important;
+            padding: 1rem 0 !important;
+          }
+          .no-print {
+            display: none !important;
+          }
+        }
+      `}</style>
+      <div className="claim-modal-card bg-white w-full max-w-4xl rounded-2xl shadow-xl border border-slate-200 overflow-hidden my-auto max-h-[92vh] flex flex-col font-sans">
         {/* Header */}
         <div className="bg-white px-8 py-4 border-b border-slate-200 text-slate-800 flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-3">
@@ -91,7 +140,7 @@ export const ClaimDetailModal: React.FC<ClaimDetailModalProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 no-print">
             <span className="text-xs text-slate-400 hidden sm:inline mr-2">
               Computed at {new Date(assessment.evaluatedAt).toLocaleTimeString()}
             </span>
@@ -113,7 +162,7 @@ export const ClaimDetailModal: React.FC<ClaimDetailModalProps> = ({
         </div>
 
         {/* Modal Scrollable Body */}
-        <div className="p-6 md:p-8 space-y-6 overflow-y-auto grow">
+        <div className="claim-modal-scroll-body p-6 md:p-8 space-y-6 overflow-y-auto grow">
           {/* Claim Metadata & Narrative Card */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Incoming Claim Inputs */}
@@ -400,7 +449,7 @@ export const ClaimDetailModal: React.FC<ClaimDetailModalProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className="p-6 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
+        <div className="p-6 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0 no-print">
           <span className="text-[11px] text-slate-400 font-medium">
             Confidential • Internal Reviewer: Sarah Jenkins
           </span>

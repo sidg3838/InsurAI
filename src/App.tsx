@@ -23,16 +23,18 @@ export default function App() {
   const [isTestingKey, setIsTestingKey] = useState<boolean>(false);
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState<boolean>(false);
 
-  // User API key state with localStorage persistence
-  const [userApiKey, setUserApiKey] = useState<string>(() => {
-    return localStorage.getItem('google_aistudio_api_key') || '';
-  });
+  // User API key state - strictly runtime memory (resets on page refresh)
+  const [userApiKey, setUserApiKey] = useState<string>('');
   const [keyTestStatus, setKeyTestStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [keyStatusMessage, setKeyStatusMessage] = useState<string | null>(null);
 
+  // Clear legacy stored key on mount to ensure session-only memory
+  useEffect(() => {
+    localStorage.removeItem('google_aistudio_api_key');
+  }, []);
+
   const handleUserApiKeyChange = (newKey: string) => {
     setUserApiKey(newKey);
-    localStorage.setItem('google_aistudio_api_key', newKey);
     setKeyTestStatus('idle');
     setKeyStatusMessage(null);
   };
@@ -118,6 +120,12 @@ export default function App() {
 
   // Evaluate single claim via Express backend or client-side fallback
   const evaluateClaim = async (claim: ClaimData, currentRules = rules, overrideApiKey = userApiKey): Promise<ClaimAssessmentResult | null> => {
+    if (!overrideApiKey || !overrideApiKey.trim()) {
+      setIsApiKeyModalOpen(true);
+      setEvalError('Please enter your Google AI Studio API key first to run AI evaluations.');
+      return null;
+    }
+
     let assessmentResult: ClaimAssessmentResult | null = null;
     let aiFetched = false;
     let aiErrorMsg = '';
@@ -171,8 +179,14 @@ export default function App() {
     return aiFetched ? assessmentResult : null;
   };
 
-  // Evaluate all unassessed claims on initial load or on batch click
+  // Evaluate all unassessed claims on manual user click
   const evaluateAllClaims = async (claimList = claims, currentRules = rules) => {
+    if (!userApiKey || !userApiKey.trim()) {
+      setIsApiKeyModalOpen(true);
+      setEvalError('Please enter your Google AI Studio API key first to run AI evaluations.');
+      return;
+    }
+
     setIsEvaluating(true);
     setEvalError(null);
     setEvalSuccessMessage(null);
@@ -181,7 +195,7 @@ export default function App() {
 
     for (let i = 0; i < claimList.length; i++) {
       const claim = claimList[i];
-      const result = await evaluateClaim(claim, currentRules);
+      const result = await evaluateClaim(claim, currentRules, userApiKey);
       if (!result) {
         failedCount++;
       } else {
@@ -203,11 +217,6 @@ export default function App() {
     }
   };
 
-  useEffect(() => {
-    // Initial batch evaluation so the dashboard displays live decisions immediately
-    evaluateAllClaims(INITIAL_MOCK_CLAIMS, DEFAULT_POLICY_RULES);
-  }, []);
-
   const handleCreateAndEvaluateClaim = async (newClaim: ClaimData) => {
     setIsEvaluating(true);
     setClaims(prev => [newClaim, ...prev]);
@@ -223,13 +232,16 @@ export default function App() {
 
   const handleUpdateRules = (newRules: PolicyRulesConfig) => {
     setRules(newRules);
-    // Automatically re-evaluate queue with new rules
-    evaluateAllClaims(claims, newRules);
+    if (userApiKey && userApiKey.trim()) {
+      evaluateAllClaims(claims, newRules);
+    }
   };
 
   const handleResetRules = () => {
     setRules(DEFAULT_POLICY_RULES);
-    evaluateAllClaims(claims, DEFAULT_POLICY_RULES);
+    if (userApiKey && userApiKey.trim()) {
+      evaluateAllClaims(claims, DEFAULT_POLICY_RULES);
+    }
   };
 
   const handleSaveAdjusterOverride = (

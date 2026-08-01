@@ -85,8 +85,9 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
                 {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
-            <p className="text-[11px] text-slate-500 mt-1.5">
-              Get a free key from <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-blue-600 underline hover:text-blue-700 font-medium">Google AI Studio</a>.
+            <p className="text-[11px] text-slate-500 mt-1.5 flex items-center justify-between">
+              <span>Get a free key from <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-blue-600 underline hover:text-blue-700 font-medium">Google AI Studio</a>.</span>
+              <span className="text-[10px] text-slate-400 font-sans italic">Runtime session storage (cleared on refresh)</span>
             </p>
           </div>
 
